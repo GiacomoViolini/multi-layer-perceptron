@@ -115,16 +115,7 @@ def make_predictions(X, W1, b1, W2, b2):
     predictions = get_predictions(A2)
     return predictions
 
-# Test a single prediction
-def test_prediction(index, W1, b1, W2, b2):
-    make_predictions(X_train[:, index, None], W1, b1, W2, b2)
-
-# Examples
-test_prediction(0, W1, b1, W2, b2)
-test_prediction(1, W1, b1, W2, b2)
-test_prediction(2, W1, b1, W2, b2)
-test_prediction(3, W1, b1, W2, b2)
-
 # Evaluate on dev set
 dev_predictions = make_predictions(X_dev, W1, b1, W2, b2)
-get_accuracy(dev_predictions, Y_dev)
+acc = get_accuracy(dev_predictions, Y_dev)
+print("Test accuracy: ", acc)
