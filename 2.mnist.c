@@ -85,21 +85,22 @@ float rand_float()
 
 void init_data(float *W1, float *W2, float *b1, float *b2)
 {
+    float scale = sqrtf(2.0f / INPUT_SIZE);
     for (int i = 0; i < N_NEURONS * INPUT_SIZE; i++)
     {
-        W1[i] = rand_float();
+        W1[i] = ((float)rand() / RAND_MAX) * 2.0f * scale - scale;
     }
     for (int i = 0; i < OUTPUT_SIZE * N_NEURONS; i++)
     {
-        W2[i] = rand_float();
+        W2[i] = ((float)rand() / RAND_MAX) * 2.0f * scale - scale;
     }
     for (int i = 0; i < N_NEURONS; i++)
     {
-        b1[i] = rand_float();
+        b1[i] = 0.0f;
     }
     for (int i = 0; i < OUTPUT_SIZE; i++)
     {
-        b2[i] = rand_float();
+        b2[i] = 0.0f;
     }
 }
 

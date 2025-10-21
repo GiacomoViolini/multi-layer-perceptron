@@ -25,10 +25,11 @@ _, m_train = X_train.shape
 hidden_neurons = 256
 # Initialize parameters
 def init_params():
-    W1 = np.random.rand(256, 784) - 0.5
-    b1 = np.random.rand(256, 1) - 0.5
-    W2 = np.random.rand(10, 256) - 0.5
-    b2 = np.random.rand(10, 1) - 0.5
+    scale = np.sqrt(2.0 / 784) 
+    W1 = (np.random.rand(256, 784) * 2.0 - 1.0) * scale
+    b1 = np.zeros((256, 1))
+    W2 = (np.random.rand(10, 256) * 2.0 - 1.0) * scale
+    b2 = np.zeros((10, 1))
     return W1, b1, W2, b2
 
 # Activations
@@ -105,7 +106,7 @@ def gradient_descent(X, Y, alpha, iterations):
     print("Total training time: ", end_time - start_time)
     return W1, b1, W2, b2
 
-iterations=100
+iterations=200
 # Train the network
 W1, b1, W2, b2 = gradient_descent(X_train, Y_train, 0.10, iterations)
 
