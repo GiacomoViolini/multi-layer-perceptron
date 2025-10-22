@@ -52,3 +52,27 @@ gcc -o 2.mnist 2.mnist.c -lm
 ./2.mnist
 ```
 
+### CUDA Version
+
+**Compile:**
+
+```bash
+nvcc -o 3.mnist 3.mnist.cu
+```
+
+**Run:**
+
+```bash
+./3.mnist
+```
+**Compile:**
+
+```bash
+ nvcc -o 4.mnist-optimized 4.mnist-optimized.cu -lcublas
+```
+
+**Run:**
+
+```bash
+./4.mnist-optimized
+```
