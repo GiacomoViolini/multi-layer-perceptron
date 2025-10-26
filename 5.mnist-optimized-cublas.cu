@@ -257,7 +257,6 @@ void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
         exit(1);
     }
 
-    // Read data in row-major format: X[row * INPUT_SIZE + col]
     for (int row = 0; row < total_samples; row++)
     {
         int label;
@@ -281,18 +280,15 @@ void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
     }
     fclose(file);
 
-    // Shuffle samples (Fisher-Yates)
     srand(time(NULL));
     for (int i = total_samples - 1; i > 0; i--)
     {
         int j = rand() % (i + 1);
 
-        // Swap labels
         int temp_label = Y_all[i];
         Y_all[i] = Y_all[j];
         Y_all[j] = temp_label;
 
-        // Swap feature rows
         for (int k = 0; k < INPUT_SIZE; k++)
         {
             float temp = X_all[i * INPUT_SIZE + k];
@@ -328,8 +324,8 @@ void allocate_gpu_memory(GPUMemory *gpu, int samples)
     CUDA_CHECK(cudaMalloc(&gpu->d_dZ1, N_NEURONS * samples * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&gpu->d_dZ2, OUTPUT_SIZE * samples * sizeof(float)));
 
-    gpu->h_Z2 = (float *)malloc(N_TRAIN_SAMPLES * OUTPUT_SIZE * sizeof(float));
-    gpu->h_dZ2 = (float *)malloc(N_TRAIN_SAMPLES * OUTPUT_SIZE * sizeof(float));
+    gpu->h_Z2 = (float *)malloc(samples * OUTPUT_SIZE * sizeof(float));
+    gpu->h_dZ2 = (float *)malloc(samples * OUTPUT_SIZE * sizeof(float));
 
     CUBLAS_CHECK(cublasCreate(&gpu->cublas_handle));
 }
@@ -377,16 +373,15 @@ void init_data(float *W1, float *W2, float *b1, float *b2)
     }
 }
 
-void gradient_descent(float *X, int *Y, int samples)
+void gradient_descent(float *X, int *Y, int samples, GPUMemory *gpu)
 {
     clock_t start_time, end_time;
     start_time = clock();
     int forward_times = 0, backward_times = 0;
 
-    GPUMemory gpu;
-    allocate_gpu_memory(&gpu, samples);
+    allocate_gpu_memory(gpu, samples);
 
-    CUDA_CHECK(cudaMemcpy(gpu.d_X, X,
+    CUDA_CHECK(cudaMemcpy(gpu->d_X, X,
                           samples * INPUT_SIZE * sizeof(float),
                           cudaMemcpyHostToDevice));
 
@@ -397,42 +392,42 @@ void gradient_descent(float *X, int *Y, int samples)
 
     init_data(W1, W2, b1, b2);
 
-    CUDA_CHECK(cudaMemcpy(gpu.d_W1, W1,
+    CUDA_CHECK(cudaMemcpy(gpu->d_W1, W1,
                           N_NEURONS * INPUT_SIZE * sizeof(float),
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gpu.d_W2, W2,
+    CUDA_CHECK(cudaMemcpy(gpu->d_W2, W2,
                           OUTPUT_SIZE * N_NEURONS * sizeof(float),
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gpu.d_b1, b1,
+    CUDA_CHECK(cudaMemcpy(gpu->d_b1, b1,
                           N_NEURONS * sizeof(float),
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gpu.d_b2, b2,
+    CUDA_CHECK(cudaMemcpy(gpu->d_b2, b2,
                           OUTPUT_SIZE * sizeof(float),
                           cudaMemcpyHostToDevice));
 
     for (int i = 0; i < ITERATIONS; i++)
     {
         clock_t start_fwd = clock();
-        forward_prop_gpu(&gpu, samples);
+        forward_prop_gpu(gpu, samples);
         forward_times += clock() - start_fwd;
 
-        CUDA_CHECK(cudaMemcpy(gpu.h_Z2, gpu.d_Z2,
+        CUDA_CHECK(cudaMemcpy(gpu->h_Z2, gpu->d_Z2,
                               samples * OUTPUT_SIZE * sizeof(float),
                               cudaMemcpyDeviceToHost));
 
-        softmax_and_gradZ2(samples, gpu.h_Z2,
-                           Y, gpu.h_dZ2);
+        softmax_and_gradZ2(samples, gpu->h_Z2,
+                           Y, gpu->h_dZ2);
 
-        CUDA_CHECK(cudaMemcpy(gpu.d_dZ2, gpu.h_dZ2,
+        CUDA_CHECK(cudaMemcpy(gpu->d_dZ2, gpu->h_dZ2,
                               samples * OUTPUT_SIZE * sizeof(float),
                               cudaMemcpyHostToDevice));
         clock_t start_bwd = clock();
-        backward_prop_gpu(&gpu, samples);
+        backward_prop_gpu(gpu, samples);
         backward_times += clock() - start_bwd;
-        update_weights_only(&gpu, LEARNING_RATE);
+        update_weights_only(gpu, LEARNING_RATE);
         if (i % 10 == 0)
         {
-            float acc = compute_accuracy(&gpu, X, Y, samples);
+            float acc = compute_accuracy(gpu, X, Y, samples);
             printf("Iteration %d, accuracy: %f\n", i, acc);
         }
     }
@@ -446,7 +441,6 @@ void gradient_descent(float *X, int *Y, int samples)
     free(W2);
     free(b1);
     free(b2);
-    free_gpu_memory(&gpu);
 }
 
 int main()
@@ -458,8 +452,13 @@ int main()
 
     loadData(X_train, Y_train, X_test, Y_test);
 
-    gradient_descent(X_train, Y_train, N_TRAIN_SAMPLES);
+    GPUMemory gpu;
+    gradient_descent(X_train, Y_train, N_TRAIN_SAMPLES, &gpu);
 
+    float test_acc = compute_accuracy(&gpu, X_test, Y_test, N_TEST_SAMPLES);
+    printf("Test accuracy: %f\n", test_acc);
+
+    free_gpu_memory(&gpu);
     free(X_train);
     free(Y_train);
     free(X_test);
