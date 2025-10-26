@@ -24,8 +24,9 @@
 
 void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
 {
-    float *X_all = (float *)malloc(INPUT_SIZE * (N_TRAIN_SAMPLES + N_TEST_SAMPLES) * sizeof(float));
-    int *Y_all = (int *)malloc((N_TRAIN_SAMPLES + N_TEST_SAMPLES) * sizeof(int));
+    int total_samples = N_TRAIN_SAMPLES + N_TEST_SAMPLES;
+    float *X_all = (float *)malloc(INPUT_SIZE * total_samples * sizeof(float));
+    int *Y_all = (int *)malloc(total_samples * sizeof(int));
 
     FILE *file = fopen("./data/train.csv", "r");
     if (!file)
@@ -40,7 +41,9 @@ void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
         fprintf(stderr, "Error reading header\n");
         exit(1);
     }
-    for (int row = 0; row < N_TRAIN_SAMPLES + N_TEST_SAMPLES; row++)
+    
+    // Read data in column-major format: X[col * total_samples + row]
+    for (int row = 0; row < total_samples; row++)
     {
         int label;
         fscanf(file, "%d,", &label);
@@ -50,14 +53,14 @@ void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
         {
             float feature;
             fscanf(file, "%f,", &feature);
-            X_all[row * INPUT_SIZE + col] = feature / 255.0;
+            X_all[col * total_samples + row] = feature / 255.0;
         }
     }
     fclose(file);
 
     // Shuffle data: https://www.geeksforgeeks.org/dsa/shuffle-a-given-array-using-fisher-yates-shuffle-algorithm/
     srand(time(NULL));
-    for (int i = N_TRAIN_SAMPLES + N_TEST_SAMPLES - 1; i > 0; i--)
+    for (int i = total_samples - 1; i > 0; i--)
     {
         int j = rand() % (i + 1);
 
@@ -67,9 +70,9 @@ void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
 
         for (int k = 0; k < INPUT_SIZE; k++)
         {
-            float temp_feature = X_all[i * INPUT_SIZE + k];
-            X_all[i * INPUT_SIZE + k] = X_all[j * INPUT_SIZE + k];
-            X_all[j * INPUT_SIZE + k] = temp_feature;
+            float temp_feature = X_all[k * total_samples + i];
+            X_all[k * total_samples + i] = X_all[k * total_samples + j];
+            X_all[k * total_samples + j] = temp_feature;
         }
     }
 
@@ -77,14 +80,14 @@ void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
     {
         Y_test[row] = Y_all[row];
         for (int col = 0; col < INPUT_SIZE; col++)
-            X_test[row * INPUT_SIZE + col] = X_all[row * INPUT_SIZE + col];
+            X_test[col * N_TEST_SAMPLES + row] = X_all[col * total_samples + row];
     }
 
     for (int row = 0; row < N_TRAIN_SAMPLES; row++)
     {
         Y_train[row] = Y_all[row + N_TEST_SAMPLES];
         for (int col = 0; col < INPUT_SIZE; col++)
-            X_train[row * INPUT_SIZE + col] = X_all[(row + N_TEST_SAMPLES) * INPUT_SIZE + col];
+            X_train[col * N_TRAIN_SAMPLES + row] = X_all[col * total_samples + (row + N_TEST_SAMPLES)];
     }
     free(X_all);
     free(Y_all);
@@ -215,7 +218,7 @@ void forward_prop(float *W1, float *W2, float *b1, float *b2, float *X, float *A
     // Col Major order
     dim3 numBlocksFirstLayer((samples + threadsPerBlockFirstLayer.x - 1) / threadsPerBlockFirstLayer.x,
                              (N_NEURONS + threadsPerBlockFirstLayer.y - 1) / threadsPerBlockFirstLayer.y);
-    naive_matmul_a_bt_kernel<<<numBlocksFirstLayer, threadsPerBlockFirstLayer>>>(d_W1, d_X, d_Z1, N_NEURONS, INPUT_SIZE, samples);
+    naive_matmul_kernel<<<numBlocksFirstLayer, threadsPerBlockFirstLayer>>>(d_W1, d_X, d_Z1, N_NEURONS, INPUT_SIZE, samples);
     CUDA_CHECK(cudaDeviceSynchronize());
 
     add_bias_kernel<<<numBlocksFirstLayer, threadsPerBlockFirstLayer>>>(d_Z1, d_b1, N_NEURONS, samples);

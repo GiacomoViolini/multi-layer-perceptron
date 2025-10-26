@@ -2,3 +2,4 @@ venv/
 2.mnist
 3.mnist
 4.mnist-optimized
+5.mnist-optimized-cublas

@@ -1,6 +1,6 @@
 # Neural Network for MNIST-like Dataset - Python, C, CUDA
 
-This project implements a **feedforward neural network** in both **Python**, **C** and **CUDA** for image classification on the MNIST dataset.
+This project implements a **feedforward neural network** in **Python**, **C** and **CUDA** for image classification on the MNIST dataset. Each version builds upon the previous one, from a  CPU implementation to an optimized GPU training version using cuBLAS.
 
 ---
 
@@ -16,6 +16,12 @@ This project implements a **feedforward neural network** in both **Python**, **C
 - GCC (or compatible C compiler)
 - Standard libraries: `<stdio.h>`, `<stdlib.h>`, `<math.h>`, `<time.h>`
 
+### CUDA Version
+
+- NVIDIA CUDA Toolkit 11.0+
+- cuBLAS library (included with CUDA Toolkit)
+- NVIDIA GPU
+
 ---
 
 ## How to Run
@@ -30,12 +36,6 @@ python -m venv venv
 pip install --upgrade pip
 pip install numpy pandas
 python 1.mnist.py
-```
-
-**Run:**
-
-```bash
-./2.mnist
 ```
 
 ### C Version
@@ -65,14 +65,27 @@ nvcc -o 3.mnist 3.mnist.cu
 ```bash
 ./3.mnist
 ```
+
 **Compile:**
 
 ```bash
- nvcc -o 4.mnist-optimized 4.mnist-optimized.cu -lcublas
+ nvcc -o 4.mnist-optimized 4.mnist-optimized.cu
 ```
 
 **Run:**
 
 ```bash
 ./4.mnist-optimized
+```
+
+**Compile:**
+
+```bash
+ nvcc -o 5.mnist-optimized-cublas 5.mnist-optimized-cublas.cu -lcublas
+```
+
+**Run:**
+
+```bash
+./5.mnist-optimized-cublas
 ```
