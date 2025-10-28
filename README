@@ -89,3 +89,8 @@ nvcc -o 3.mnist 3.mnist.cu
 ```bash
 ./5.mnist-optimized-cublas
 ```
+
+
+## Kaggle
+
+The code can be accessed and run https://www.kaggle.com/code/giacomoviolini/multi-layer-perceptron 
