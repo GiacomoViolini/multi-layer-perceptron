@@ -2,110 +2,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "utils.c"
 #define INPUT_SIZE 784
 #define OUTPUT_SIZE 10
 #define N_NEURONS 256
 #define ITERATIONS 10
 #define LEARNING_RATE 0.1
-#define N_TRAIN_SAMPLES 10000
+#define N_TRAIN_SAMPLES 41000
 #define N_TEST_SAMPLES 1000
-
-void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
-{
-    int total_samples = N_TRAIN_SAMPLES + N_TEST_SAMPLES;
-    float *X_all = (float *)malloc(INPUT_SIZE * total_samples * sizeof(float));
-    int *Y_all = (int *)malloc(total_samples * sizeof(int));
-
-    FILE *file = fopen("./data/train.csv", "r");
-    if (!file)
-    {
-        perror("train.csv");
-        exit(1);
-    }
-
-    char header[100000];
-    if (fgets(header, sizeof(header), file) == NULL)
-    {
-        fprintf(stderr, "Error reading header\n");
-        exit(1);
-    }
-    
-    // Read data in column-major format: X[col * total_samples + row]
-    for (int row = 0; row < total_samples; row++)
-    {
-        int label;
-        fscanf(file, "%d,", &label);
-        Y_all[row] = label;
-
-        for (int col = 0; col < INPUT_SIZE; col++)
-        {
-            float feature;
-            fscanf(file, "%f,", &feature);
-            X_all[col * total_samples + row] = feature / 255.0;
-        }
-    }
-    fclose(file);
-
-    // Shuffle data: https://www.geeksforgeeks.org/dsa/shuffle-a-given-array-using-fisher-yates-shuffle-algorithm/
-    srand(time(NULL));
-    for (int i = total_samples - 1; i > 0; i--)
-    {
-        int j = rand() % (i + 1);
-
-        int temp_label = Y_all[i];
-        Y_all[i] = Y_all[j];
-        Y_all[j] = temp_label;
-
-        for (int k = 0; k < INPUT_SIZE; k++)
-        {
-            float temp_feature = X_all[k * total_samples + i];
-            X_all[k * total_samples + i] = X_all[k * total_samples + j];
-            X_all[k * total_samples + j] = temp_feature;
-        }
-    }
-
-    for (int row = 0; row < N_TEST_SAMPLES; row++)
-    {
-        Y_test[row] = Y_all[row];
-        for (int col = 0; col < INPUT_SIZE; col++)
-            X_test[col * N_TEST_SAMPLES + row] = X_all[col * total_samples + row];
-    }
-
-    for (int row = 0; row < N_TRAIN_SAMPLES; row++)
-    {
-        Y_train[row] = Y_all[row + N_TEST_SAMPLES];
-        for (int col = 0; col < INPUT_SIZE; col++)
-            X_train[col * N_TRAIN_SAMPLES + row] = X_all[col * total_samples + (row + N_TEST_SAMPLES)];
-    }
-    free(X_all);
-    free(Y_all);
-}
-
-float rand_float()
-{
-    return ((float)rand() / RAND_MAX) - 0.5f;
-};
-
-void init_data(float *W1, float *W2, float *b1, float *b2)
-{
-    float scale = sqrtf(2.0f / INPUT_SIZE);
-    for (int i = 0; i < N_NEURONS * INPUT_SIZE; i++)
-    {
-        W1[i] = ((float)rand() / RAND_MAX) * 2.0f * scale - scale;
-    }
-    for (int i = 0; i < OUTPUT_SIZE * N_NEURONS; i++)
-    {
-        W2[i] = ((float)rand() / RAND_MAX) * 2.0f * scale - scale;
-    }
-    for (int i = 0; i < N_NEURONS; i++)
-    {
-        b1[i] = 0.0f;
-    }
-    for (int i = 0; i < OUTPUT_SIZE; i++)
-    {
-        b2[i] = 0.0f;
-    }
-}
 
 void ReLu(float *Z, int size, float *A)
 {
@@ -219,9 +123,8 @@ void one_hot(int *Y, int samples, float *Y_one_hot)
     }
 }
 
-void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float *W2, float *X, int *Y, int samples, float *dZ2, float *dZ1, float *dW2, float *dW1, float *db2, float *db1)
+void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float *W2, float *X, int *Y, int samples, float *dZ2, float *dZ1, float *dW2, float *dW1, float *db2, float *db1, float *one_hot_Y, float *dReLU)
 {
-    float *one_hot_Y = malloc(OUTPUT_SIZE * samples * sizeof(float));
     one_hot(Y, samples, one_hot_Y);
     for (int i = 0; i < samples * OUTPUT_SIZE; i++)
     {
@@ -243,7 +146,6 @@ void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float 
     }
     naive_matmul_at_b(W2, dZ2, dZ1, OUTPUT_SIZE, N_NEURONS, samples);
 
-    float *dReLU = malloc(N_NEURONS * samples * sizeof(float));
     ReLu_der(Z1, N_NEURONS * samples, dReLU);
 
     for (int i = 0; i < N_NEURONS * samples; i++)
@@ -262,9 +164,6 @@ void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float 
         }
         db1[i] /= samples;
     }
-
-    free(one_hot_Y);
-    free(dReLU);
 }
 
 void update_params(
@@ -281,44 +180,10 @@ void update_params(
         b2[i] -= LEARNING_RATE * db2[i];
 }
 
-void get_predictions(float *A2, int *predictions, int samples)
-{
-    for (int sample = 0; sample < samples; sample++)
-    {
-        float max_val = A2[0 * samples + sample];
-        int max_idx = 0;
-
-        for (int i = 1; i < OUTPUT_SIZE; i++)
-        {
-            if (A2[i * samples + sample] > max_val)
-            {
-                max_val = A2[i * samples + sample];
-                max_idx = i;
-            }
-        }
-
-        predictions[sample] = max_idx;
-    }
-}
-
-float get_accuracy(int *predictions, int *Y, int samples)
-{
-    int correct = 0;
-
-    for (int i = 0; i < samples; i++)
-    {
-        if (predictions[i] == Y[i])
-            correct++;
-    }
-
-    return (float)correct / samples;
-}
-
 void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *b2, int samples)
 {
-    clock_t start_time, end_time;
-    start_time = clock();
-    int forward_times = 0, backward_times = 0;
+    double start_time, end_time;
+    double forward_times = 0, backward_times = 0;
 
     float *A1 = malloc(N_NEURONS * samples * sizeof(float));
     float *Z1 = malloc(N_NEURONS * samples * sizeof(float));
@@ -330,26 +195,31 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     float *dZ1 = malloc(N_NEURONS * samples * sizeof(float));
     float *dW1 = malloc(INPUT_SIZE * N_NEURONS * sizeof(float));
     float *db1 = malloc(N_NEURONS * sizeof(float));
+    float *one_hot_Y = malloc(OUTPUT_SIZE * samples * sizeof(float));
+    float *dReLU = malloc(N_NEURONS * samples * sizeof(float));
 
     int *predictions = malloc(samples * sizeof(int));
 
+    start_time = get_time_sec();
     for (int i = 0; i < ITERATIONS; i++)
     {
-        clock_t start_fwd = clock();
+        double start_fwd = get_time_sec();
         forward_prop(W1, W2, b1, b2, X, A1, A2, Z1, Z2, samples);
-        forward_times += clock() - start_fwd;
-        clock_t start_bwd = clock();
-        backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1);
-        backward_times += clock() - start_bwd;
+        forward_times += get_time_sec() - start_fwd;
+
+        double start_bwd = get_time_sec();
+        backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1, one_hot_Y, dReLU);
+        backward_times += get_time_sec() - start_bwd;
+
         update_params(W1, b1, W2, b2, dW1, db1, dW2, db2);
-        get_predictions(A2, predictions, samples);
-        float acc = get_accuracy(predictions, Y, samples);
-        printf("Iteration %d, accuracy: %f\n", i, acc);
     }
-    end_time = clock();
-    printf("Average forward propagation time: %f\n", ((double)forward_times / CLOCKS_PER_SEC) / ITERATIONS);
-    printf("Average backward propagation time: %f\n", ((double)backward_times / CLOCKS_PER_SEC) / ITERATIONS);
-    printf("Total training time: %f\n", (double)(end_time - start_time) / CLOCKS_PER_SEC);
+
+    end_time = get_time_sec();
+
+    printf("Average forward propagation time: %fs\n", (forward_times / ITERATIONS));
+    printf("Average backward propagation time: %fs\n", (backward_times / ITERATIONS));
+    printf("Total training time: %fs\n", (end_time - start_time));
+
     free(A1);
     free(Z1);
     free(A2);
@@ -360,6 +230,8 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     free(dZ1);
     free(dW1);
     free(db1);
+    free(one_hot_Y);
+    free(dReLU);
     free(predictions);
 }
 

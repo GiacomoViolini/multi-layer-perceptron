@@ -1,4 +1,3 @@
-#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -11,34 +10,22 @@
 #define LEARNING_RATE 0.1
 #define N_TRAIN_SAMPLES 41000
 #define N_TEST_SAMPLES 1000
+#define ALPHA 1.0f
+#define BETA 0.0f
 
-void ReLu(float *Z, int size, float *A)
+void add_bias_and_softmax(float *Z, float *b, int neurons, int samples, float *A)
 {
-    for (int i = 0; i < size; i++)
-    {
-        A[i] = Z[i] > 0 ? Z[i] : 0;
-    }
-}
-
-void ReLu_der(float *Z, int size, float *A)
-{
-    for (int i = 0; i < size; i++)
-    {
-        A[i] = Z[i] > 0;
-    }
-}
-
-void softmax(float *Z, float *A, int samples)
-{
+#pragma omp parallel for schedule(static)
     for (int j = 0; j < samples; j++)
     {
         float sum = 0.0f;
-        for (int i = 0; i < OUTPUT_SIZE; i++)
+        for (int i = 0; i < neurons; i++)
         {
+            Z[i * samples + j] += b[i];
             A[i * samples + j] = expf(Z[i * samples + j]);
             sum += A[i * samples + j];
         }
-        for (int i = 0; i < OUTPUT_SIZE; i++)
+        for (int i = 0; i < neurons; i++)
         {
             A[i * samples + j] /= sum;
         }
@@ -46,11 +33,8 @@ void softmax(float *Z, float *A, int samples)
 }
 
 void blas_matmul(float *A, float *B, float *C,
-                 int m, int n, int k)
+                 int m, int n, int k, float alpha, float beta)
 {
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
     cblas_sgemm(
         CblasRowMajor,
         CblasNoTrans, CblasNoTrans,
@@ -63,11 +47,8 @@ void blas_matmul(float *A, float *B, float *C,
 }
 
 void blas_matmul_a_bt(float *A, float *B, float *C,
-                      int m, int n, int k)
+                      int m, int n, int k, float alpha, float beta)
 {
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
     cblas_sgemm(
         CblasRowMajor,
         CblasNoTrans, CblasTrans,
@@ -80,11 +61,8 @@ void blas_matmul_a_bt(float *A, float *B, float *C,
 }
 
 void blas_matmul_at_b(float *A, float *B, float *C,
-                      int m, int n, int k)
+                      int m, int n, int k, float alpha, float beta)
 {
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
     cblas_sgemm(
         CblasRowMajor,
         CblasTrans, CblasNoTrans,
@@ -96,81 +74,78 @@ void blas_matmul_at_b(float *A, float *B, float *C,
         C, k);
 }
 
-void add_bias(float *Z, float *b, int neurons, int samples)
+void add_bias_and_ReLu(float *Z, float *b, int neurons, int samples, float *A)
 {
-    for (int i = 0; i < neurons; i++)
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < N_NEURONS; i++)
     {
         for (int j = 0; j < samples; j++)
         {
-            Z[i * samples + j] += b[i];
+            float val = Z[i * samples + j] + b[i];
+            A[i * samples + j] = val > 0 ? val : 0;
         }
     }
 }
 
 void forward_prop(float *W1, float *W2, float *b1, float *b2, float *X, float *A1, float *A2, float *Z1, float *Z2, int samples)
 {
-    blas_matmul(W1, X, Z1, N_NEURONS, INPUT_SIZE, samples);
-    add_bias(Z1, b1, N_NEURONS, samples);
-    ReLu(Z1, N_NEURONS * samples, A1);
-    blas_matmul(W2, A1, Z2, OUTPUT_SIZE, N_NEURONS, samples);
-    add_bias(Z2, b2, OUTPUT_SIZE, samples);
-    softmax(Z2, A2, samples);
+    blas_matmul(W1, X, Z1, N_NEURONS, INPUT_SIZE, samples, ALPHA, BETA);
+    add_bias_and_ReLu(Z1, b1, N_NEURONS, samples, A1);
+    blas_matmul(W2, A1, Z2, OUTPUT_SIZE, N_NEURONS, samples, ALPHA, BETA);
+    add_bias_and_softmax(Z2, b2, OUTPUT_SIZE, samples, A2);
 }
 
-void one_hot(int *Y, int samples, float *Y_one_hot)
+void one_hot_and_dZ2(int *Y, int samples, float *dZ2, float *A2)
 {
-    for (int i = 0; i < OUTPUT_SIZE * samples; i++)
-    {
-        Y_one_hot[i] = 0.0f;
-    }
-
-    for (int sample = 0; sample < samples; sample++)
-    {
-        int label = Y[sample];
-        Y_one_hot[label * samples + sample] = 1.0f;
-    }
-}
-
-void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float *W2, float *X, int *Y, int samples, float *dZ2, float *dZ1, float *dW2, float *dW1, float *db2, float *db1, float *one_hot_Y, float *dReLU)
-{
-    one_hot(Y, samples, one_hot_Y);
-    for (int i = 0; i < samples * OUTPUT_SIZE; i++)
-    {
-        dZ2[i] = A2[i] - one_hot_Y[i];
-    }
-    blas_matmul_a_bt(dZ2, A1, dW2, OUTPUT_SIZE, samples, N_NEURONS);
-    for (int i = 0; i < OUTPUT_SIZE * N_NEURONS; i++)
-    {
-        dW2[i] /= samples;
-    }
+#pragma omp parallel for collapse(2) schedule(static)
     for (int i = 0; i < OUTPUT_SIZE; i++)
     {
-        db2[i] = 0.0f;
         for (int j = 0; j < samples; j++)
         {
-            db2[i] += dZ2[i * samples + j];
+            float y_val = (i == Y[j]) ? 1.0f : 0.0f;
+            dZ2[i * samples + j] = A2[i * samples + j] - y_val;
         }
-        db2[i] /= samples;
     }
-    blas_matmul_at_b(W2, dZ2, dZ1, OUTPUT_SIZE, N_NEURONS, samples);
+}
 
-    ReLu_der(Z1, N_NEURONS * samples, dReLU);
-
-    for (int i = 0; i < N_NEURONS * samples; i++)
-        dZ1[i] *= dReLU[i];
-    blas_matmul_a_bt(dZ1, X, dW1, N_NEURONS, samples, INPUT_SIZE);
-    for (int i = 0; i < INPUT_SIZE * N_NEURONS; i++)
+void ReLu_der_and_dZ1(float *Z1, int size, float *dZ1)
+{
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < size; i++)
     {
-        dW1[i] /= samples;
+        if (Z1[i] <= 0)
+        {
+            dZ1[i] = 0.0f;
+        }
     }
+}
+
+void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float *W2, float *X, int *Y, int samples, float *dZ2, float *dZ1, float *dW2, float *dW1, float *db2, float *db1, float *dReLU)
+{
+    one_hot_and_dZ2(Y, samples, dZ2, A2);
+    blas_matmul_a_bt(dZ2, A1, dW2, OUTPUT_SIZE, samples, N_NEURONS, ALPHA / samples, BETA);
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < OUTPUT_SIZE; i++)
+    {
+        float sum = 0.0f;
+        for (int j = 0; j < samples; j++)
+        {
+            sum += dZ2[i * samples + j];
+        }
+        db2[i] = sum / samples;
+    }
+    blas_matmul_at_b(W2, dZ2, dZ1, OUTPUT_SIZE, N_NEURONS, samples, ALPHA, BETA);
+    ReLu_der_and_dZ1(Z1, N_NEURONS * samples, dZ1);
+    blas_matmul_a_bt(dZ1, X, dW1, N_NEURONS, samples, INPUT_SIZE, ALPHA / samples, BETA);
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < N_NEURONS; i++)
     {
-        db1[i] = 0.0f;
+        float sum = 0.0f;
         for (int j = 0; j < samples; j++)
         {
-            db1[i] += dZ1[i * samples + j];
+            sum += dZ1[i * samples + j];
         }
-        db1[i] /= samples;
+        db1[i] = sum / samples;
     }
 }
 
@@ -178,14 +153,21 @@ void update_params(
     float *W1, float *b1, float *W2, float *b2,
     float *dW1, float *db1, float *dW2, float *db2)
 {
-    for (int i = 0; i < N_NEURONS * INPUT_SIZE; i++)
-        W1[i] -= LEARNING_RATE * dW1[i];
-    for (int i = 0; i < N_NEURONS; i++)
-        b1[i] -= LEARNING_RATE * db1[i];
-    for (int i = 0; i < OUTPUT_SIZE * N_NEURONS; i++)
-        W2[i] -= LEARNING_RATE * dW2[i];
-    for (int i = 0; i < OUTPUT_SIZE; i++)
-        b2[i] -= LEARNING_RATE * db2[i];
+#pragma omp parallel
+    {
+        #pragma omp for nowait schedule(static)
+        for (int i = 0; i < N_NEURONS * INPUT_SIZE; i++)
+            W1[i] -= LEARNING_RATE * dW1[i];
+        #pragma omp for nowait schedule(static)
+        for (int i = 0; i < N_NEURONS; i++)
+            b1[i] -= LEARNING_RATE * db1[i];
+        #pragma omp for nowait schedule(static)
+        for (int i = 0; i < OUTPUT_SIZE * N_NEURONS; i++)
+            W2[i] -= LEARNING_RATE * dW2[i];
+        #pragma omp for schedule(static)
+        for (int i = 0; i < OUTPUT_SIZE; i++)
+            b2[i] -= LEARNING_RATE * db2[i];
+    }
 }
 
 void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *b2, int samples)
@@ -203,7 +185,6 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     float *dZ1 = malloc(N_NEURONS * samples * sizeof(float));
     float *dW1 = malloc(INPUT_SIZE * N_NEURONS * sizeof(float));
     float *db1 = malloc(N_NEURONS * sizeof(float));
-    float *one_hot_Y = malloc(OUTPUT_SIZE * samples * sizeof(float));
     float *dReLU = malloc(N_NEURONS * samples * sizeof(float));
 
     int *predictions = malloc(samples * sizeof(int));
@@ -217,7 +198,7 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
             forward_times += get_time_sec() - start_fwd;
 
         double start_bwd = get_time_sec();
-        backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1, one_hot_Y, dReLU);
+        backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1, dReLU);
         if (i > 49) // warm-up for more accurate timing
             backward_times += get_time_sec() - start_bwd;
 
@@ -240,7 +221,6 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     free(dZ1);
     free(dW1);
     free(db1);
-    free(one_hot_Y);
     free(dReLU);
     free(predictions);
 }

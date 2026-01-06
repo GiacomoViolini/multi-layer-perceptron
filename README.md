@@ -43,7 +43,7 @@ python 1.mnist.py
 **Compile:**
 
 ```bash
-gcc -o 2.mnist 2.mnist.c -lm
+gcc -Ofast -march=native -flto -funroll-loops -o 2.mnist 2.mnist.c -lm
 ```
 
 **Run:**
@@ -55,7 +55,7 @@ gcc -o 2.mnist 2.mnist.c -lm
 **Compile:**
 
 ```bash
-gcc -o 3.mnist-blas 3.mnist_blas.c -lopenblas -lm
+gcc -Ofast -march=native -mtune=native -flto -funroll-loops -fno-plt -o 3.mnist-blas 3.mnist-blas.c -lopenblas -lm
 ```
 
 **Run:**
@@ -64,42 +64,54 @@ gcc -o 3.mnist-blas 3.mnist_blas.c -lopenblas -lm
 ./3.mnist-blas
 ```
 
+**Compile:**
+
+```bash
+gcc -Ofast -fopenmp -march=native -mtune=native -flto -funroll-loops -fno-plt -o 4.mnist-blas-optimized 4.mnist-blas-optimized.c -lopenblas -lm
+```
+
+**Run:**
+
+```bash
+./4.mnist-blas-optimized
+```
+
 ### CUDA Version
 
 **Compile:**
 
 ```bash
-nvcc -o 4.mnist 4.mnist.cu
+nvcc -o 5.mnist 5.mnist.cu
 ```
 
 **Run:**
 
 ```bash
-./4.mnist
+./5.mnist
 ```
 
 **Compile:**
 
 ```bash
- nvcc -o 5.mnist-optimized 5.mnist-optimized.cu
+ nvcc -o 6.mnist-optimized 6.mnist-optimized.cu
 ```
 
 **Run:**
 
 ```bash
-./5.mnist-optimized
+./6.mnist-optimized
 ```
 
 **Compile:**
 
 ```bash
- nvcc -o 6.mnist-optimized-cublas 6.mnist-optimized-cublas.cu -lcublas
+ nvcc -o 7.mnist-optimized-cublas 7.mnist-optimized-cublas.cu -lcublas
 ```
 
 **Run:**
 
 ```bash
-./6.mnist-optimized-cublas
+./7.mnist-optimized-cublas
 ```
 
 

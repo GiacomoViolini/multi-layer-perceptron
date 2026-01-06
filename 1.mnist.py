@@ -86,9 +86,9 @@ def  get_accuracy(predictions, Y):
 
 # Gradient descent
 def gradient_descent(X, Y, alpha, iterations):
-    start_time = time.time()
     forward_times , backward_times = 0, 0
     W1, b1, W2, b2 = init_params()
+    start_time = time.time()
     for i in range(iterations):
         start_fwd = time.time()
         Z1, A1, Z2, A2 = forward_prop(W1, b1, W2, b2, X)
