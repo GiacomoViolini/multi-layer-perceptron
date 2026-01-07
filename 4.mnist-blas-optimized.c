@@ -120,7 +120,7 @@ void ReLu_der_and_dZ1(float *Z1, int size, float *dZ1)
     }
 }
 
-void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float *W2, float *X, int *Y, int samples, float *dZ2, float *dZ1, float *dW2, float *dW1, float *db2, float *db1, float *dReLU)
+void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float *W2, float *X, int *Y, int samples, float *dZ2, float *dZ1, float *dW2, float *dW1, float *db2, float *db1)
 {
     one_hot_and_dZ2(Y, samples, dZ2, A2);
     blas_matmul_a_bt(dZ2, A1, dW2, OUTPUT_SIZE, samples, N_NEURONS, ALPHA / samples, BETA);
@@ -185,7 +185,6 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     float *dZ1 = malloc(N_NEURONS * samples * sizeof(float));
     float *dW1 = malloc(INPUT_SIZE * N_NEURONS * sizeof(float));
     float *db1 = malloc(N_NEURONS * sizeof(float));
-    float *dReLU = malloc(N_NEURONS * samples * sizeof(float));
 
     int *predictions = malloc(samples * sizeof(int));
 
@@ -198,7 +197,7 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
             forward_times += get_time_sec() - start_fwd;
 
         double start_bwd = get_time_sec();
-        backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1, dReLU);
+        backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1);
         if (i > 49) // warm-up for more accurate timing
             backward_times += get_time_sec() - start_bwd;
 
@@ -221,7 +220,6 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     free(dZ1);
     free(dW1);
     free(db1);
-    free(dReLU);
     free(predictions);
 }
 

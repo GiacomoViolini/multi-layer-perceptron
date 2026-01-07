@@ -50,25 +50,28 @@ void naive_matmul(float *A, float *B, float *C, int m, int n, int k)
     {
         for (int j = 0; j < k; j++)
         {
-            C[i * k + j] = 0.0f;
+            float sum = 0.0f;
             for (int l = 0; l < n; l++)
             {
-                C[i * k + j] += A[i * n + l] * B[l * k + j];
+                sum += A[i * n + l] * B[l * k + j];
             }
+            C[i * k + j] = sum;
         }
     }
 }
+
 void naive_matmul_a_bt(float *A, float *B, float *C, int m, int n, int k)
 {
     for (int i = 0; i < m; i++)
     {
         for (int j = 0; j < k; j++)
         {
-            C[i * k + j] = 0.0f;
+            float sum = 0.0f;
             for (int l = 0; l < n; l++)
             {
-                C[i * k + j] += A[i * n + l] * B[j * n + l];
+                sum += A[i * n + l] * B[j * n + l];
             }
+            C[i * k + j] = sum;
         }
     }
 }
@@ -79,11 +82,12 @@ void naive_matmul_at_b(float *A, float *B, float *C, int m, int n, int k)
     {
         for (int j = 0; j < k; j++)
         {
-            C[i * k + j] = 0.0f;
+            float sum = 0.0f;
             for (int l = 0; l < m; l++)
             {
-                C[i * k + j] += A[l * n + i] * B[l * k + j];
+                sum += A[l * n + i] * B[l * k + j];
             }
+            C[i * k + j] = sum;
         }
     }
 }
@@ -137,12 +141,12 @@ void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float 
     }
     for (int i = 0; i < OUTPUT_SIZE; i++)
     {
-        db2[i] = 0.0f;
+        float sum = 0.0f;
         for (int j = 0; j < samples; j++)
         {
-            db2[i] += dZ2[i * samples + j];
+            sum += dZ2[i * samples + j];
         }
-        db2[i] /= samples;
+        db2[i] = sum / samples;
     }
     naive_matmul_at_b(W2, dZ2, dZ1, OUTPUT_SIZE, N_NEURONS, samples);
 
@@ -157,12 +161,12 @@ void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float 
     }
     for (int i = 0; i < N_NEURONS; i++)
     {
-        db1[i] = 0.0f;
+        float sum = 0.0f;
         for (int j = 0; j < samples; j++)
         {
-            db1[i] += dZ1[i * samples + j];
+            sum += dZ1[i * samples + j];
         }
-        db1[i] /= samples;
+        db1[i] = sum / samples;
     }
 }
 

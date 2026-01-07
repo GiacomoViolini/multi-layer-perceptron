@@ -11,6 +11,8 @@
 #define LEARNING_RATE 0.1
 #define N_TRAIN_SAMPLES 41000
 #define N_TEST_SAMPLES 1000
+#define ALPHA 1.0f
+#define BETA 0.0f
 
 void ReLu(float *Z, int size, float *A)
 {
@@ -46,11 +48,8 @@ void softmax(float *Z, float *A, int samples)
 }
 
 void blas_matmul(float *A, float *B, float *C,
-                 int m, int n, int k)
+                 int m, int n, int k, float alpha, float beta)
 {
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
     cblas_sgemm(
         CblasRowMajor,
         CblasNoTrans, CblasNoTrans,
@@ -63,11 +62,8 @@ void blas_matmul(float *A, float *B, float *C,
 }
 
 void blas_matmul_a_bt(float *A, float *B, float *C,
-                      int m, int n, int k)
+                      int m, int n, int k, float alpha, float beta)
 {
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
     cblas_sgemm(
         CblasRowMajor,
         CblasNoTrans, CblasTrans,
@@ -80,11 +76,8 @@ void blas_matmul_a_bt(float *A, float *B, float *C,
 }
 
 void blas_matmul_at_b(float *A, float *B, float *C,
-                      int m, int n, int k)
+                      int m, int n, int k, float alpha, float beta)
 {
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
     cblas_sgemm(
         CblasRowMajor,
         CblasTrans, CblasNoTrans,
@@ -109,10 +102,10 @@ void add_bias(float *Z, float *b, int neurons, int samples)
 
 void forward_prop(float *W1, float *W2, float *b1, float *b2, float *X, float *A1, float *A2, float *Z1, float *Z2, int samples)
 {
-    blas_matmul(W1, X, Z1, N_NEURONS, INPUT_SIZE, samples);
+    blas_matmul(W1, X, Z1, N_NEURONS, INPUT_SIZE, samples, ALPHA, BETA);
     add_bias(Z1, b1, N_NEURONS, samples);
     ReLu(Z1, N_NEURONS * samples, A1);
-    blas_matmul(W2, A1, Z2, OUTPUT_SIZE, N_NEURONS, samples);
+    blas_matmul(W2, A1, Z2, OUTPUT_SIZE, N_NEURONS, samples, ALPHA, BETA);
     add_bias(Z2, b2, OUTPUT_SIZE, samples);
     softmax(Z2, A2, samples);
 }
@@ -138,11 +131,7 @@ void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float 
     {
         dZ2[i] = A2[i] - one_hot_Y[i];
     }
-    blas_matmul_a_bt(dZ2, A1, dW2, OUTPUT_SIZE, samples, N_NEURONS);
-    for (int i = 0; i < OUTPUT_SIZE * N_NEURONS; i++)
-    {
-        dW2[i] /= samples;
-    }
+    blas_matmul_a_bt(dZ2, A1, dW2, OUTPUT_SIZE, samples, N_NEURONS, ALPHA / samples, BETA);
     for (int i = 0; i < OUTPUT_SIZE; i++)
     {
         db2[i] = 0.0f;
@@ -152,17 +141,13 @@ void backward_prop(float *Z1, float *A1, float *Z2, float *A2, float *W1, float 
         }
         db2[i] /= samples;
     }
-    blas_matmul_at_b(W2, dZ2, dZ1, OUTPUT_SIZE, N_NEURONS, samples);
+    blas_matmul_at_b(W2, dZ2, dZ1, OUTPUT_SIZE, N_NEURONS, samples, ALPHA, BETA);
 
     ReLu_der(Z1, N_NEURONS * samples, dReLU);
 
     for (int i = 0; i < N_NEURONS * samples; i++)
         dZ1[i] *= dReLU[i];
-    blas_matmul_a_bt(dZ1, X, dW1, N_NEURONS, samples, INPUT_SIZE);
-    for (int i = 0; i < INPUT_SIZE * N_NEURONS; i++)
-    {
-        dW1[i] /= samples;
-    }
+    blas_matmul_a_bt(dZ1, X, dW1, N_NEURONS, samples, INPUT_SIZE, ALPHA / samples, BETA);
     for (int i = 0; i < N_NEURONS; i++)
     {
         db1[i] = 0.0f;

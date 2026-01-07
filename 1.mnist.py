@@ -5,6 +5,8 @@ import time
 # Load data
 data = pd.read_csv('./data/train.csv')
 
+np.random.seed(42)
+
 # Preprocess data
 data = np.array(data)
 m, n = data.shape
