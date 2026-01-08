@@ -239,8 +239,7 @@ void forward_prop_gpu(GPUMemory *gpu, int samples)
     int grid_hidden = (total_hidden + 255) / 256;
     add_bias_kernel<<<grid_hidden, 256>>>(gpu->d_Z1, gpu->d_b1, N_NEURONS, samples);
 
-    int ReLuBlocks = (N_NEURONS * samples + 256 - 1) / 256;
-    relu_kernel<<<ReLuBlocks, 256>>>(gpu->d_Z1, gpu->d_A1, N_NEURONS * samples);
+    relu_kernel<<<grid_hidden, 256>>>(gpu->d_Z1, gpu->d_A1, N_NEURONS * samples);
 
     dim3 threadsPerBlockSecondLayer(16, 16);
     dim3 numBlocksSecondLayer((samples + threadsPerBlockSecondLayer.x - 1) / threadsPerBlockSecondLayer.x,
