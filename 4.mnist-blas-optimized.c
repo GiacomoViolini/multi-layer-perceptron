@@ -193,13 +193,11 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     {
         double start_fwd = get_time_sec();
         forward_prop(W1, W2, b1, b2, X, A1, A2, Z1, Z2, samples);
-        if (i > 49) // warm-up for more accurate timing
-            forward_times += get_time_sec() - start_fwd;
+        forward_times += get_time_sec() - start_fwd;
 
         double start_bwd = get_time_sec();
         backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1);
-        if (i > 49) // warm-up for more accurate timing
-            backward_times += get_time_sec() - start_bwd;
+        backward_times += get_time_sec() - start_bwd;
 
         update_params(W1, b1, W2, b2, dW1, db1, dW2, db2);
     }

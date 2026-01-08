@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "utils.c"
 #define INPUT_SIZE 784
 #define OUTPUT_SIZE 10
 #define N_NEURONS 256
@@ -41,7 +42,7 @@ void loadData(float *X_train, int *Y_train, float *X_test, int *Y_test)
         fprintf(stderr, "Error reading header\n");
         exit(1);
     }
-    
+
     // Read data in column-major format: X[col * total_samples + row]
     for (int row = 0; row < total_samples; row++)
     {
@@ -464,9 +465,8 @@ float get_accuracy(int *predictions, int *Y, int samples)
 
 void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *b2, int samples)
 {
-    clock_t start_time, end_time;
-    start_time = clock();
-    int forward_times = 0, backward_times = 0;
+    double start_time, end_time;
+    double forward_times = 0, backward_times = 0;
 
     float *A1 = (float *)malloc(N_NEURONS * samples * sizeof(float));
     float *Z1 = (float *)malloc(N_NEURONS * samples * sizeof(float));
@@ -481,26 +481,23 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
 
     int *predictions = (int *)malloc(samples * sizeof(int));
 
+    start_time = get_time_sec();
     for (int i = 0; i < ITERATIONS; i++)
     {
-        clock_t start_fwd = clock();
+        double start_fwd = get_time_sec();
         forward_prop(W1, W2, b1, b2, X, A1, A2, Z1, Z2, samples);
-        forward_times += clock() - start_fwd;
-        clock_t start_bwd = clock();
+        forward_times += get_time_sec() - start_fwd;
+
+        double start_bwd = get_time_sec();
         backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, samples, dZ2, dZ1, dW2, dW1, db2, db1);
-        backward_times += clock() - start_bwd;
+        backward_times += get_time_sec() - start_bwd;
+
         update_params(W1, b1, W2, b2, dW1, db1, dW2, db2);
-        if (i % 10 == 0)
-        {
-            get_predictions(A2, predictions, samples);
-            float acc = get_accuracy(predictions, Y, samples);
-            printf("Iteration %d, accuracy: %f\n", i, acc);
-        }
     }
-    end_time = clock();
-    printf("Average forward propagation time: %f\n", ((float)forward_times / CLOCKS_PER_SEC) / ITERATIONS);
-    printf("Average backward propagation time: %f\n", ((float)backward_times / CLOCKS_PER_SEC) / ITERATIONS);
-    printf("Total training time: %f\n", (float)(end_time - start_time) / CLOCKS_PER_SEC);
+    end_time = get_time_sec();
+    printf("Average forward propagation time: %f\n", (forward_times / ITERATIONS));
+    printf("Average backward propagation time: %f\n", (backward_times / ITERATIONS));
+    printf("Total training time: %f\n", (end_time - start_time));
     free(A1);
     free(Z1);
     free(A2);
