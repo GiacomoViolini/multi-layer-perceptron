@@ -39,7 +39,7 @@ typedef struct
     float *d_W1, *d_W2, *d_b1, *d_b2;
     float *d_X, *d_Z1, *d_A1, *d_Z2, *d_A2;
     float *d_dW1, *d_dW2, *d_db1, *d_db2;
-    float *d_dZ1, *d_dZ2;
+    float *d_dZ1, *d_dZ2, *d_dReLU;
     float *d_Y_one_hot;
     int *d_Y;
 
@@ -58,13 +58,13 @@ __global__ void softmax_kernel(float *Z, float *A, int samples)
     int sample_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (sample_idx >= samples)
         return;
-    
+
     int offset = sample_idx * OUTPUT_SIZE;
     float sum = 0.0f;
 
     for (int i = 0; i < OUTPUT_SIZE; i++)
     {
-        float exp_val = expf(Z[offset + i]); 
+        float exp_val = expf(Z[offset + i]);
         A[offset + i] = exp_val;
         sum += exp_val;
     }
@@ -90,7 +90,7 @@ __global__ void one_hot_kernel(int *labels, float *one_hot, int samples)
     int sample_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (sample_idx >= samples)
         return;
-    
+
     int label = labels[sample_idx];
     for (int i = 0; i < OUTPUT_SIZE; i++)
     {
@@ -103,21 +103,27 @@ __global__ void compute_dZ2_kernel(float *probs, float *one_hot, float *grad, in
     int sample_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (sample_idx >= samples)
         return;
-    
-    float inv_samples = 1.0f / samples;
+
     for (int i = 0; i < OUTPUT_SIZE; i++)
     {
         int idx = sample_idx * OUTPUT_SIZE + i;
-        grad[idx] = (probs[idx] - one_hot[idx]) * inv_samples;
+        grad[idx] = probs[idx] - one_hot[idx];
     }
 }
 
-__global__ void relu_backward_kernel(float *grad, float *x, int total)
+__global__ void relu_derivative_kernel(float *Z, float *dReLU, int total_size)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < total)
+    if (idx < total_size)
+        dReLU[idx] = Z[idx] > 0 ? 1.0 : 0.0;
+}
+
+__global__ void computedZ1(float *A, float *B, int total_size)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < total_size)
     {
-        grad[idx] *= (x[idx] > 0.0f ? 1.0f : 0.0f);
+        A[idx] *= B[idx];
     }
 }
 
@@ -157,33 +163,44 @@ void forward_prop_gpu(GPUMemory *gpu, int samples)
     int grid_out = (total_out + 255) / 256;
     add_bias_kernel<<<grid_out, 256>>>(gpu->d_Z2, gpu->d_b2, samples, OUTPUT_SIZE);
 
-    softmax_kernel<<<grid_out, 256>>>(gpu->d_Z2, gpu->d_A2, samples);
+    int grid_softmax = (samples + 255) / 256;
+    softmax_kernel<<<grid_softmax, 256>>>(gpu->d_Z2, gpu->d_A2, samples);
+}
+
+__global__ void avg_rows_kernel(float *input, float *output, int rows, int cols)
+{
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < rows)
+    {
+        float sum = 0.0;
+        for (int col = 0; col < cols; col++)
+        {
+            sum += input[col * rows + row];
+        }
+        output[row] = sum / cols;
+    }
 }
 
 void backward_prop_gpu(GPUMemory *gpu, int samples)
 {
-    const float alpha = 1.0f, beta = 0.0f;
+    const float alpha = 1.0f, beta = 0.0f, scaled = 1.0f / samples;
 
-    CUDA_CHECK(cudaMemset(gpu->d_dW1, 0, INPUT_SIZE * N_NEURONS * sizeof(float)));
-    CUDA_CHECK(cudaMemset(gpu->d_dW2, 0, N_NEURONS * OUTPUT_SIZE * sizeof(float)));
-    CUDA_CHECK(cudaMemset(gpu->d_db1, 0, N_NEURONS * sizeof(float)));
-    CUDA_CHECK(cudaMemset(gpu->d_db2, 0, OUTPUT_SIZE * sizeof(float)));
+    CUDA_CHECK(cudaMemset(gpu->d_Y_one_hot, 0, OUTPUT_SIZE * samples * sizeof(float)));
 
     int threads = 256;
     int blocks = (samples + threads - 1) / threads;
     one_hot_kernel<<<blocks, threads>>>(gpu->d_Y, gpu->d_Y_one_hot, samples);
-    
+
     compute_dZ2_kernel<<<blocks, threads>>>(gpu->d_A2, gpu->d_Y_one_hot, gpu->d_dZ2, samples);
 
     CUBLAS_CHECK(cublasSgemm(gpu->cublas_handle, CUBLAS_OP_N, CUBLAS_OP_T,
                              OUTPUT_SIZE, N_NEURONS, samples,
-                             &alpha, gpu->d_dZ2, OUTPUT_SIZE,
+                             &scaled, gpu->d_dZ2, OUTPUT_SIZE,
                              gpu->d_A1, N_NEURONS, &beta,
                              gpu->d_dW2, OUTPUT_SIZE));
 
-    int total_out = samples * OUTPUT_SIZE;
-    int grid_out = (total_out + 255) / 256;
-    bias_backward_kernel<<<grid_out, 256>>>(gpu->d_dZ2, gpu->d_db2, samples, OUTPUT_SIZE);
+    int blocksAvgB2 = (OUTPUT_SIZE + 16 - 1) / 16;
+    avg_rows_kernel<<<blocksAvgB2, 16>>>(gpu->d_dZ2, gpu->d_db2, OUTPUT_SIZE, samples);
 
     CUBLAS_CHECK(cublasSgemm(gpu->cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N,
                              N_NEURONS, samples, OUTPUT_SIZE,
@@ -191,17 +208,20 @@ void backward_prop_gpu(GPUMemory *gpu, int samples)
                              gpu->d_dZ2, OUTPUT_SIZE, &beta,
                              gpu->d_dZ1, N_NEURONS));
 
-    int total_hidden = samples * N_NEURONS;
-    int grid_hidden = (total_hidden + 255) / 256;
-    relu_backward_kernel<<<grid_hidden, 256>>>(gpu->d_dZ1, gpu->d_Z1, total_hidden);
+    int reluDerBlocks = (N_NEURONS * samples + 255) / 256;
+    relu_derivative_kernel<<<reluDerBlocks, 256>>>(gpu->d_Z1, gpu->d_dReLU, N_NEURONS * samples);
+
+    int dZ1Blocks = (N_NEURONS * samples + 63) / 64;
+    computedZ1<<<dZ1Blocks, 64>>>(gpu->d_dZ1, gpu->d_dReLU, N_NEURONS * samples);
 
     CUBLAS_CHECK(cublasSgemm(gpu->cublas_handle, CUBLAS_OP_N, CUBLAS_OP_T,
                              N_NEURONS, INPUT_SIZE, samples,
-                             &alpha, gpu->d_dZ1, N_NEURONS,
+                             &scaled, gpu->d_dZ1, N_NEURONS,
                              gpu->d_X, INPUT_SIZE, &beta,
                              gpu->d_dW1, N_NEURONS));
 
-    bias_backward_kernel<<<grid_hidden, 256>>>(gpu->d_dZ1, gpu->d_db1, samples, N_NEURONS);
+    int blocksAvgB1 = (N_NEURONS + 256 - 1) / 256;
+    avg_rows_kernel<<<blocksAvgB1, 256>>>(gpu->d_dZ1, gpu->d_db1, N_NEURONS, samples);
 }
 
 void update_params_gpu(GPUMemory *gpu)
@@ -298,7 +318,6 @@ void allocate_gpu_memory(GPUMemory *gpu, int samples)
 
     CUDA_CHECK(cudaMalloc(&gpu->d_X, samples * INPUT_SIZE * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&gpu->d_Y, samples * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&gpu->d_Y_one_hot, samples * OUTPUT_SIZE * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&gpu->d_Z1, N_NEURONS * samples * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&gpu->d_A1, N_NEURONS * samples * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&gpu->d_Z2, OUTPUT_SIZE * samples * sizeof(float)));
@@ -310,7 +329,8 @@ void allocate_gpu_memory(GPUMemory *gpu, int samples)
     CUDA_CHECK(cudaMalloc(&gpu->d_db2, OUTPUT_SIZE * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&gpu->d_dZ1, N_NEURONS * samples * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&gpu->d_dZ2, OUTPUT_SIZE * samples * sizeof(float)));
-
+    CUDA_CHECK(cudaMalloc(&gpu->d_dReLU, N_NEURONS * samples * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&gpu->d_Y_one_hot, OUTPUT_SIZE * samples * sizeof(float)));
     CUBLAS_CHECK(cublasCreate(&gpu->cublas_handle));
 }
 
@@ -322,7 +342,6 @@ void free_gpu_memory(GPUMemory *gpu)
     CUDA_CHECK(cudaFree(gpu->d_b2));
     CUDA_CHECK(cudaFree(gpu->d_X));
     CUDA_CHECK(cudaFree(gpu->d_Y));
-    CUDA_CHECK(cudaFree(gpu->d_Y_one_hot));
     CUDA_CHECK(cudaFree(gpu->d_Z1));
     CUDA_CHECK(cudaFree(gpu->d_A1));
     CUDA_CHECK(cudaFree(gpu->d_Z2));
@@ -333,7 +352,8 @@ void free_gpu_memory(GPUMemory *gpu)
     CUDA_CHECK(cudaFree(gpu->d_db2));
     CUDA_CHECK(cudaFree(gpu->d_dZ1));
     CUDA_CHECK(cudaFree(gpu->d_dZ2));
-
+    CUDA_CHECK(cudaFree(gpu->d_dReLU));
+    CUDA_CHECK(cudaFree(gpu->d_Y_one_hot));
     CUBLAS_CHECK(cublasDestroy(gpu->cublas_handle));
 }
 
@@ -374,7 +394,7 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
 
     float *A2 = (float *)malloc(OUTPUT_SIZE * samples * sizeof(float));
     int *predictions = (int *)malloc(samples * sizeof(int));
-    
+
     start_time = get_time_sec();
     for (int i = 0; i < ITERATIONS; i++)
     {
@@ -389,16 +409,6 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
         backward_times += get_time_sec() - start_bwd;
 
         update_params_gpu(&gpu);
-        
-        if (i % 10 == 0)
-        {
-            CUDA_CHECK(cudaMemcpy(A2, gpu.d_A2,
-                                  samples * OUTPUT_SIZE * sizeof(float),
-                                  cudaMemcpyDeviceToHost));
-            get_predictions_col_major(A2, predictions, samples);
-            float acc = get_accuracy(predictions, Y, samples);
-            printf("Iteration %d, accuracy: %f\n", i, acc);
-        }
     }
 
     CUDA_CHECK(cudaMemcpy(W1, gpu.d_W1, N_NEURONS * INPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost));
@@ -414,6 +424,25 @@ void gradient_descent(float *X, int *Y, float *W1, float *W2, float *b1, float *
     free_gpu_memory(&gpu);
     free(A2);
     free(predictions);
+}
+
+void forward_prop_test(float *W1, float *W2, float *b1, float *b2, float *X, float *A2, int samples)
+{
+    GPUMemory gpu;
+    allocate_gpu_memory(&gpu, samples);
+
+    CUDA_CHECK(cudaMemcpy(gpu.d_W1, W1, N_NEURONS * INPUT_SIZE * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(gpu.d_W2, W2, OUTPUT_SIZE * N_NEURONS * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(gpu.d_b1, b1, N_NEURONS * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(gpu.d_b2, b2, OUTPUT_SIZE * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(gpu.d_X, X, samples * INPUT_SIZE * sizeof(float), cudaMemcpyHostToDevice));
+
+    forward_prop_gpu(&gpu, samples);
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(A2, gpu.d_A2, OUTPUT_SIZE * samples * sizeof(float), cudaMemcpyDeviceToHost));
+
+    free_gpu_memory(&gpu);
 }
 
 int main()
@@ -432,6 +461,15 @@ int main()
 
     init_data(W1, W2, b1, b2);
     gradient_descent(X_train, Y_train, W1, W2, b1, b2, N_TRAIN_SAMPLES);
+
+    float *A2_test = (float *)malloc(OUTPUT_SIZE * N_TEST_SAMPLES * sizeof(float));
+    forward_prop_test(W1, W2, b1, b2, X_test, A2_test, N_TEST_SAMPLES);
+
+    int *predictions_test = (int *)malloc(N_TEST_SAMPLES * sizeof(int));
+
+    get_predictions_col_major(A2_test, predictions_test, N_TEST_SAMPLES);
+    float acc = get_accuracy(predictions_test, Y_test, N_TEST_SAMPLES);
+    printf("Test accuracy: %f\n", acc);
 
     free(X_train);
     free(Y_train);

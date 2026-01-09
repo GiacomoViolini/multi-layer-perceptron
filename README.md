@@ -81,7 +81,7 @@ gcc -Ofast -fopenmp -march=native -mtune=native -flto -funroll-loops -fno-plt -o
 **Compile:**
 
 ```bash
-nvcc -o 5.mnist 5.mnist.cu
+nvcc -O3 -Xcompiler "-Ofast -march=native" --use_fast_math -arch=native -o 5.mnist 5.mnist.cu
 ```
 
 **Run:**
@@ -93,7 +93,7 @@ nvcc -o 5.mnist 5.mnist.cu
 **Compile:**
 
 ```bash
- nvcc -o 6.mnist-optimized 6.mnist-optimized.cu
+nvcc -O3 -Xcompiler "-Ofast -march=native" --use_fast_math -arch=native -o 6.mnist-optimized 6.mnist-optimized.cu
 ```
 
 **Run:**
@@ -105,7 +105,7 @@ nvcc -o 5.mnist 5.mnist.cu
 **Compile:**
 
 ```bash
- nvcc -o 7.mnist-optimized-cublas 7.mnist-optimized-cublas.cu -lcublas
+ nvcc -O3 -Xcompiler "-Ofast -march=native" --use_fast_math -arch=native -o 7.mnist-optimized-cublas 7.mnist-optimized-cublas.cu -lcublas
 ```
 
 **Run:**
