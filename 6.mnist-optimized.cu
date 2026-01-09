@@ -105,13 +105,13 @@ __global__ void naive_matmul_at_b_kernel(float *A, float *B, float *C, int m, in
     }
 }
 
-__global__ void add_bias_kernel(float *Z, float *b, int neurons, int samples)
+__global__ void add_bias_kernel(float *x, float *bias, int batch, int size)
 {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row < neurons && col < samples)
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < batch * size)
     {
-        Z[row * samples + col] += b[row];
+        int bias_idx = idx % size;
+        x[idx] += bias[bias_idx];
     }
 }
 
