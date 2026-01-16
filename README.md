@@ -1,6 +1,7 @@
-# Neural Network for MNIST-like Dataset - Python, C, CUDA
+# Neural Network for MNIST-like Dataset - CPU, GPU and TPU
 
-This project implements a **feedforward neural network** in **Python**, **C** and **CUDA** for image classification on the MNIST dataset. Each version builds upon the previous one, from a  CPU implementation to an optimized GPU training version using cuBLAS.
+This project implements a **feedforward neural network** in **Python**, **C**, **CUDA** and **JAX** for image classification on the MNIST dataset. Each version builds upon the previous one, progressing from a CPU implementation to optimized GPU and TPU executions using CUDA, cuBLAS, and JAX via XLA.
+
 
 ---
 
